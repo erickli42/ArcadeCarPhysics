@@ -1080,20 +1080,20 @@ public class ArcadeCar : MonoBehaviour
                 }
                 else if (wwwPostGame.isDone)
                 {
-                    if (wwwPostGame.isNetworkError || wwwPostGame.isHttpError)
-                    {
-                        postGameSurvey.show();
-                        postGameSurvey.setError(wwwPostGame.error);
-                    }
-                    else
-                    {
+                    //if (wwwPostGame.isNetworkError || wwwPostGame.isHttpError)
+                    //{
+                    //    postGameSurvey.show();
+                    //    postGameSurvey.setError(wwwPostGame.error);
+                    //}
+                    //else
+                    //{
                         Debug.Log("lap out 2 a");
                         startNewLap();
                         Debug.Log("lap out 2 b");
                         postGameSurvey.hide();
                         //position = new Vector3(361, 4, -95);
                         //transform.rotation = Quaternion.Euler(new Vector3(0.0f, 90.0f, 0.0f));
-                    }
+                    //}
                     wwwPostGame = null;
                 }
             }
