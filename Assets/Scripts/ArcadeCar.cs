@@ -1,13 +1,14 @@
 ﻿using System;
 using UnityEngine;
 using System.Collections.Generic;
-
-
+using UnityEngine.UI;
+using UnityEngine.Networking;
+using System.IO;
 
 public class ArcadeCar : MonoBehaviour
 {
-
-
+    bool enableFinishFlag = false;
+    bool FINISH_LINE_FLAG = false;
     const int WHEEL_LEFT_INDEX = 0;
     const int WHEEL_RIGHT_INDEX = 1;
 
@@ -15,6 +16,25 @@ public class ArcadeCar : MonoBehaviour
 
     int gKey = 0;
     int hKey = 0;
+    int resolutionMultiple = 80;
+    int q_len = 1; int q_len_prev = 1;
+    int fps = 30;
+    int fps_var = 0;
+    public String top5ScoresString;
+    public bool forward_pressed = false;
+    public bool reverse_pressed = false;
+    private Queue<DataInputContainer> input_queue = new Queue<DataInputContainer>();
+    public bool reset_pressed = false;
+    public bool start_pressed = false;
+    bool lap_increment = false;
+    int prevLap = -10;      //initialized later before startNewLap is called in Update Input (~1049)
+    public StreamWriter writer;
+    public PostGameSurvey postGameSurvey;
+    UnityWebRequest wwwPostGame;
+    bool prevStartPressed = false;
+    bool isDoneSurveys = false;
+    Guid sessionUuid = System.Guid.NewGuid();
+
 
 
     public class WheelData
@@ -153,8 +173,24 @@ public class ArcadeCar : MonoBehaviour
 
     }
 
-
-
+    private System.Random rand = new System.Random();
+    private double NV_MAGICCONST = 4 * Math.Exp(-0.5) / Math.Sqrt(2.0);
+    public double normalRandom(double mu, double sigma)
+    {
+        double u1, u2, z;
+        while (true)
+        {
+            u1 = rand.NextDouble();
+            u2 = 1.0 - rand.NextDouble();
+            z = NV_MAGICCONST * (u1 - 0.5) / u2;
+            double zz = z * z / 4.0;
+            if (zz <= -Math.Log(u2))
+            {
+                break;
+            }
+        }
+        return mu + z * sigma;
+    }
 
 
     public Vector3 centerOfMass = Vector3.zero;
@@ -231,10 +267,296 @@ public class ArcadeCar : MonoBehaviour
     bool startGame = false;
     bool startRace = false;
     bool controlsDisabled = false;
+    bool rageQuitFlag = true;
     public float time;
     List<float> scoreBoard = new List<float>();
+
+
+    List<float> FPSList = new List<float>();
+    List<float> LatencyList = new List<float>();
+    List<float> StabilityList = new List<float>();
+    List<string> ResolutionList = new List<string>();
+    List<string> TimeList = new List<string>();
+    public string resultText = "";
     //======================================================================================
 
+    public int lapCount = -10;      //initialized later before startNewLap is called in Update Input (~1049)
+    int[] randomizedLapArray;// = { 0, 1, 2, 3, 4, 5, 6 };
+
+    int[] Randomize(int[] arr)
+    {
+        System.Random rand = new System.Random();
+
+        // For each spot in the array, pick
+        // a random item to swap into that spot.
+        for (int i = 0; i < arr.Length - 1; i++)
+        {
+            int j = rand.Next(i, arr.Length);
+            int temp = arr[i];
+            arr[i] = arr[j];
+            arr[j] = temp;
+        }
+        return arr;
+    }
+
+    void changeLapVariables()
+    {
+        if (lapCount < randomizedLapArray.Length)
+        {
+            switch (randomizedLapArray[lapCount])
+            {
+                //control
+                case 0:
+                    fps = 30; resolutionMultiple = 80; q_len = 1; fps_var = 0;
+                    break;
+
+                //fps
+                case 1:
+                    fps = 15; resolutionMultiple = 80; q_len = 1; fps_var = 0;
+                    break;
+                case 2:
+                    fps = 20; resolutionMultiple = 80; q_len = 1; fps_var = 0;
+                    break;
+                case 3:
+                    fps = 25; resolutionMultiple = 80; q_len = 1; fps_var = 0;
+                    break;
+                case 4:
+                    fps = 60; resolutionMultiple = 80; q_len = 1; fps_var = 0;
+                    break;
+
+
+                //resolution
+                case 5:
+                    fps = 30; resolutionMultiple = 40; q_len = 1; fps_var = 0; // 640x360
+                    break;
+                case 6:
+                    fps = 30; resolutionMultiple = 50; q_len = 1; fps_var = 0; // 800x450
+                    break;
+                case 7:
+                    fps = 30; resolutionMultiple = 60; q_len = 1; fps_var = 0; // 960x540
+                    break;
+                case 8:
+                    fps = 30; resolutionMultiple = 120; q_len = 1; fps_var = 0; // 1920x1080
+                    break;
+
+                //latency
+                case 9:
+                    fps = 30; resolutionMultiple = 80; q_len = 5; fps_var = 0;
+                    break;
+                case 10:
+                    fps = 30; resolutionMultiple = 80; q_len = 10; fps_var = 0;
+                    break;
+                case 11:
+                    fps = 30; resolutionMultiple = 80; q_len = 15; fps_var = 0;
+                    break;
+                case 12:
+                    fps = 30; resolutionMultiple = 80; q_len = 20; fps_var = 0;
+                    break;
+
+                //stability
+                case 13:
+                    fps = 30; resolutionMultiple = 80; q_len = 1; fps_var = 7;
+                    break;
+                case 14:
+                    fps = 30; resolutionMultiple = 80; q_len = 1; fps_var = 10;
+                    break;
+                case 15:
+                    fps = 30; resolutionMultiple = 80; q_len = 1; fps_var = 12;
+                    break;
+                case 16:
+                    fps = 30; resolutionMultiple = 80; q_len = 1; fps_var = 15;
+                    break;
+
+                default:
+                    fps = 30; resolutionMultiple = 80; q_len = 1; fps_var = 0;
+                    break;
+            }
+            if (lapCount != prevLap)
+            {
+                prevLap = lapCount;
+                input_queue.Clear();
+                initLog();
+                if (writer != null)
+                {
+                    writer.WriteLine(string.Format("Reset (LAP {4}) fps = {0}; resolutionMultiple = {1}, q_len = {2}, fps_var = {3}", fps, resolutionMultiple, q_len, fps_var, lapCount+1));
+                    writer.Flush();
+                }
+                else
+                {
+                    // Debug.Log("Could not writer to the writer");
+                }
+            }
+        }
+
+        Application.targetFrameRate = fps;
+        Screen.SetResolution(16 * resolutionMultiple, 9 * resolutionMultiple, true);
+
+        string resString = "";
+        resString += (16 * resolutionMultiple).ToString() + " x " + (9 * resolutionMultiple).ToString();
+        if (lapCount == ResolutionList.Count) ResolutionList.Add(resString);
+        if (lapCount == FPSList.Count) FPSList.Add(Application.targetFrameRate);
+        if (lapCount == LatencyList.Count) LatencyList.Add(q_len);
+        if (lapCount == StabilityList.Count) StabilityList.Add(fps_var);
+
+
+    }
+
+    public void initLog()
+    {
+        if (writer == null)
+        {
+            try
+            {
+                String settingsLogPath = Application.persistentDataPath + "/settingsLog.txt";
+                // Debug.Log("logging path: " + settingsLogPath);
+                writer = new StreamWriter(settingsLogPath, true);
+                writer.WriteLine("".PadLeft(80, '='));
+                writer.WriteLine("Starting a new Log");
+                writer.Flush();
+            }
+            catch (Exception exc)
+            {
+                // Debug.Log(exc.StackTrace);
+            }
+        }
+    }
+    //void changeFPS()
+    //{
+    //    if (lapCount <= 6)
+    //        switch (randomizedLapArray[lapCount])
+    //        {
+    //            //control lap
+    //            case 0:
+    //                fps = 10;// 30;
+    //                break;
+    //            case 1:
+    //                fps = 10;// 15;
+    //                break;
+    //            case 2:
+    //                fps = 10;//20;
+    //                break;
+    //            case 3:
+    //                fps = 10;//24;
+    //                break;
+    //            case 4:
+    //                fps = 10;//40;
+    //                break;
+    //            case 5:
+    //                fps = 60;//50;
+    //                break;
+    //            case 6:
+    //                fps = 60;//
+    //                break;
+    //            default:
+    //                fps = 60;
+    //                break;
+    //        }
+    //    Application.targetFrameRate = fps;
+    // if (lapCount == FPSList.Count) FPSList.Add(Application.targetFrameRate);
+    //}
+    //void changeResolution()
+    //{
+    //    if (lapCount <= 6)
+    //    {
+    //        switch (randomizedLapArray[lapCount])
+    //        {
+    //            case 0:
+    //                resolutionMultiple = 12;// 12; // 256x144
+    //                break;
+    //            case 1:
+    //                resolutionMultiple = 12;// 40; // 640x360
+    //                break;
+    //            case 2:
+    //                resolutionMultiple = 12;// 80; // 1280x720
+    //                break;
+    //            case 3:
+    //                resolutionMultiple = 12;// 120; // 1920x1080
+    //                break;
+    //            case 4:
+    //                resolutionMultiple = 12;// 12;
+    //                break;
+    //            case 5:
+    //                resolutionMultiple = 12;// 40;
+    //                break;
+    //            case 6:
+    //                resolutionMultiple = 12;// 80;
+    //                break;
+    //            default:
+    //                resolutionMultiple = 120; // 1920x1080
+    //                break;
+    //        }
+    //    }
+    //string resString = "";
+    //resString += (16 * resolutionMultiple).ToString() + " x " + (9 * resolutionMultiple).ToString();
+    //    if (lapCount == ResolutionList.Count) ResolutionList.Add(resString);
+    //    Screen.SetResolution(16 * resolutionMultiple, 9 * resolutionMultiple, true);
+    //}
+
+    //void changeLatency()
+    //{
+    //    if (lapCount <= 6)
+    //        switch (randomizedLapArray[lapCount])
+    //        {
+    //            //control lap
+    //            case 0:
+    //                q_len = 1;
+    //                break;
+    //            case 1:
+    //                q_len = 2;
+    //                break;
+    //            case 2:
+    //                q_len = 4;
+    //                break;
+    //            case 3:
+    //                q_len = 6;
+    //                break;
+    //            case 4:
+    //                q_len = 8;
+    //                break;
+    //            case 5:
+    //                q_len = 13;
+    //                break;
+    //            case 6:
+    //                q_len = 30;
+    //                break;
+    //            default:
+    //                q_len = 1;
+    //                break;
+    //        }
+    //}
+
+    //void changeStability()
+    //{
+    //    if (lapCount <= 6)
+    //        switch (randomizedLapArray[lapCount])
+    //        {
+    //            //control lap
+    //            case 0:
+    //                fps_var = 60;
+    //                break;
+    //            case 1:
+    //                fps_var = 60;
+    //                break;
+    //            case 2:
+    //                fps_var = 60;
+    //                break;
+    //            case 3:
+    //                fps_var = 60;
+    //                break;
+    //            case 4:
+    //                fps_var = 60;
+    //                break;
+    //            case 5:
+    //                fps_var = 60;
+    //                break;
+    //            case 6:
+    //                fps_var = 60;
+    //                break;
+    //            default:
+    //                fps_var = 0;
+    //                break;
+    //        }
+    //}
     // UI style for debug render
     static GUIStyle style = new GUIStyle();
 
@@ -247,14 +569,58 @@ public class ArcadeCar : MonoBehaviour
     Ray wheelRay = new Ray();
     RaycastHit[] wheelRayHits = new RaycastHit[16];
 
-
-    void Reset(Vector3 position)
+    //===================FINISH_LINE_STUFF============================================================
+    void WheelDataPrint()
     {
-        position += new Vector3(UnityEngine.Random.Range(-1.0f, 1.0f), 0.0f, UnityEngine.Random.Range(-1.0f, 1.0f));
+        for (int axleIndex = 0; axleIndex < axles.Length; axleIndex++)
+        {
+            Axle axle = axles[axleIndex];
+            //Debug.Log("LEFT WHEEL STUFF");
+            //Debug.Log("Left Wheel Position X:" + axle.wheelVisualLeft.transform.position.x);
+            //Debug.Log("Left Wheel Position Y:" + axle.wheelVisualLeft.transform.position.y);
+            //Debug.Log("Left Wheel Position Z:" + axle.wheelVisualLeft.transform.position.z);
+
+            //Debug.Log("=======================================================");
+
+            //Debug.Log("RIGHT WHEEL STUFF");
+            //Debug.Log("Right Wheel Position X:" + axle.wheelVisualRight.transform.position.x);
+            //Debug.Log("Right Wheel Position Y:" + axle.wheelVisualRight.transform.position.y);
+            //Debug.Log("Right Wheel Position Z:" + axle.wheelVisualRight.transform.position.z);
+            //Debug.Log("Right Wheel Position:" + axle.wheelVisualRight.transform.position.x);
+
+            if ((axle.wheelVisualLeft.transform.position.z > -220) && (axle.wheelVisualRight.transform.position.z < -196) &&
+                (axle.wheelVisualLeft.transform.position.x < 357) && (axle.wheelVisualRight.transform.position.x < 357))
+            {
+                //Debug.Log("PLACE MESSAGE HERE");
+                if (enableFinishFlag) FINISH_LINE_FLAG = true;
+
+            }
+        }
+    }
+
+    //==================================================================================================
+
+    void Reset(Vector3 position, bool is_absolute = false)
+    {
+        if (is_absolute)
+        {
+            position = new Vector3(15, 10, 410);
+        }
+        else
+        {
+            position += new Vector3(UnityEngine.Random.Range(-1.0f, 1.0f), 0.0f, UnityEngine.Random.Range(-1.0f, 1.0f));
+        }
         float yaw = transform.eulerAngles.y + UnityEngine.Random.Range(-10.0f, 10.0f);
 
         transform.position = position;
-        transform.rotation = Quaternion.Euler(new Vector3(0.0f, yaw, 0.0f));
+        if (is_absolute)
+        {
+            transform.rotation = Quaternion.Euler(new Vector3(0.0f, 90.0f, 0.0f));
+        }
+        else
+        {
+            transform.rotation = Quaternion.Euler(new Vector3(0.0f, yaw, 0.0f));
+        }
 
         rb.velocity = new Vector3(0f, 0f, 0f);
         rb.angularVelocity = new Vector3(0f, 0f, 0f);
@@ -264,19 +630,21 @@ public class ArcadeCar : MonoBehaviour
             axles[axleIndex].steerAngle = 0.0f;
         }
 
-        Debug.Log(string.Format("Reset {0}, {1}, {2}, Rot {3}", position.x, position.y, position.z, yaw));
+        // Debug.Log(string.Format("Reset {0}, {1}, {2}, Rot {3}", position.x, position.y, position.z, yaw));
     }
 
     void Start()
     {
-
-
+        Screen.SetResolution(1280, 720, true);
+        int[] tempArray = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16};
+        randomizedLapArray = Randomize(tempArray);
         style.normal.textColor = Color.red;
 
         //=====================code====================================================
-        timerStyle.normal.textColor = Color.white;
+        timerStyle.normal.textColor = Color.yellow;
+
         timerStyle.fontSize = 20;
-        countdownStyle.normal.textColor = Color.white;
+        countdownStyle.normal.textColor = Color.red;
         countdownStyle.fontSize = 50;
         //=========================================================================
 
@@ -285,7 +653,7 @@ public class ArcadeCar : MonoBehaviour
             Input.gyro.enabled = true;
         }
         QualitySettings.vSyncCount = 0;
-        Application.targetFrameRate = 12;
+        Application.targetFrameRate = 30;
         rb = GetComponent<Rigidbody>();
         rb.centerOfMass = centerOfMass;
     }
@@ -385,7 +753,7 @@ public class ArcadeCar : MonoBehaviour
 
         if (debugDraw)
         {
-            Debug.Log("Max speed reached!");
+            // Debug.Log("Max speed reached!");
         }
 
         float _desiredSpeed = accCurve.keys[numKeys - 1].value;
@@ -449,19 +817,42 @@ public class ArcadeCar : MonoBehaviour
     float bestScore()
     {
         float dummy = 9999999999;
+        //make sure there is at least one score
         if (scoreBoard.Count != 0)
         {
             foreach (var x in scoreBoard)
             {
-                if (x < dummy) dummy = x;
+                if (x < dummy && x != 0) dummy = x;
             }
             return dummy;
         }
         else return -1;
     }
-    String countdownTime = "";
-    //====================================================================
 
+    float bestScore0()
+    {
+        if (scoreBoard.Count != 0) return scoreBoard[0];
+
+        else return -1;
+    }
+
+    List<float> bestScores()
+    {
+        //float dummy = 9999999999;
+        List<float> scoreList = new List<float>();
+
+        //make sure there is at least one score
+        if (scoreBoard.Count != 0)
+        {
+            int scoreNum = 3;
+            if (scoreNum >= scoreBoard.Count) scoreNum = scoreBoard.Count;
+            return scoreBoard.GetRange(0, scoreNum);
+        }
+        else return scoreList;
+    }
+    public String countdownTime = "";
+    //====================================================================
+    bool dataFlag = false;
 
     void UpdateInput()
     {
@@ -470,22 +861,38 @@ public class ArcadeCar : MonoBehaviour
 
         if (controlsDisabled == false)
         {
-            v = Input.GetAxis("Vertical");
-            h = Input.GetAxis("Horizontal");
-            //Debug.Log (string.Format ("H = {0}", h));
-            //float h = Input.acceleration.x*12;
+            // v = Input.GetAxis("Vertical");
+            v = 0;
+            if (forward_pressed)
+            {
+                v += 1.0f;
+            }
+            if (reverse_pressed)
+            {
+                v -= 1.0f;
+            }
+            if (SystemInfo.deviceType == DeviceType.Desktop)
+            {
+                h = Input.GetAxis("Horizontal");
+            }
+            else if (SystemInfo.deviceType == DeviceType.Handheld)
+            {
+                h = Input.acceleration.x * 12;
+            }
+            //Implements Latency with q_len size buffer
+            input_queue.Enqueue(new DataInputContainer(v, h));
+            if (input_queue.Count >= q_len)
+            {
+                DataInputContainer input = input_queue.Dequeue();
+                v = input.v;
+                h = input.h;
+            }
+
+            int shakiness = Math.Max(1, Math.Min(60, (int)normalRandom(fps, fps_var)));
+            Application.targetFrameRate = shakiness;            // stability shakiness
+            // Debug.Log("shakiness = " + shakiness);
 
             Touch[] myTouches = Input.touches;
-            //float v = 0;
-            //for(int i = 0; i < Input.touchCount; i++)
-            //{
-            //    Debug.Log(myTouches[i].position);
-            //    if(myTouches[i].position.x > 500){
-            //        v += 0.5f;
-            //    }else{
-            //        v -= 0.5f;
-            //    }
-            //}
         }
         if (Input.GetKey(KeyCode.G))
         {
@@ -518,18 +925,18 @@ public class ArcadeCar : MonoBehaviour
             h = 0.0f;
         }
 
-        if (Input.GetKey(KeyCode.R) && controllable)
+        if (reset_pressed && controllable)
         {
 
             //====================code========================================
-            time = 0;
+            /*time = 0;
             startGame = false;
             startRace = false;
-            scoreBoard.Clear();
+            scoreBoard.Clear();*/
             //============================================================
 
 
-            Debug.Log("Reset pressed");
+            // Debug.Log("Reset pressed");
             Ray resetRay = new Ray();
 
             // trace top-down
@@ -571,27 +978,125 @@ public class ArcadeCar : MonoBehaviour
             else
             {
                 // Hard reset
-                Reset(new Vector3(-69.48f, 5.25f, 132.71f));
+                Reset(new Vector3(-69.48f, 5.25f, 132.71f), true);
             }
         }
 
         //=====================code=================================================================
 
-        bool startPressed = Input.GetKey(KeyCode.S) && controllable;
-        bool finishPressed = Input.GetKey(KeyCode.F) && controllable;
+        bool startPressed = start_pressed && controllable;
+        bool finishPressed = FINISH_LINE_FLAG;// = Input.GetKey(KeyCode.F) && controllable;
 
-        if (startPressed)
-        {
-            time = 0;
-            startGame = true;
-        }
         if (finishPressed)
         {
+
+            FINISH_LINE_FLAG = false;
+
             startGame = false;
             startRace = false;
-            float bestScr = bestScore();
-            if (bestScr == -1 || time < bestScr) countdownTime = "HIGH SCORE!";
-            scoreBoard.Add(time);
+            float bestScr = bestScore0();
+            //float bestScr = scoreBoard[0];
+            if (bestScr == -1 || time <= bestScr) countdownTime = "HIGH SCORE!";
+            else countdownTime = "Good Try!";
+            if (!scoreBoard.Contains(time)) TimeList.Add(formatTime(time / 2));
+            if (!scoreBoard.Contains(time)) scoreBoard.Add(time);
+
+            scoreBoard.Sort();
+
+            //=============================================
+            if (dataFlag == false)//&& lapCount > 0)//lapCount == lapCount &&
+            {
+
+                for (int i = 0; i < lapCount + 1; i++)
+                {
+                    resultText += "Lap ";
+                    resultText += (i+1).ToString();
+                    resultText += ": FPS = ";
+                    resultText += FPSList[i].ToString();
+                    resultText += ", Res = ";
+                    resultText += ResolutionList[i];
+                    resultText += ", Latency = ";
+                    resultText += LatencyList[i].ToString();
+                    resultText += ", Stability = ";
+                    resultText += StabilityList[i].ToString();
+                    resultText += ", LT = ";
+                    resultText += TimeList[i];
+                    resultText += "\n";
+
+                }
+                lap_increment = true;
+                //lapCount++;
+                dataFlag = true;
+
+            }
+            //=======================================
+        }
+        if (postGameSurvey != null)
+        {
+            if (prevStartPressed != startPressed && !startPressed)
+            {
+                if (!postGameSurvey.showing)
+                {
+                    Debug.Log("hello start");
+                    GameObject go = GameObject.Find("Button (Start)");
+                    Debug.Log("hello go" + go);
+                    StartButton sb = go.GetComponent<StartButton>();
+                    Debug.Log("hello mid");
+                    if (isDoneSurveys) {
+                    }
+                    else if (sb.changeToTakeSurvey())
+                    {
+                        postGameSurvey.show();
+                    } else {
+                        Debug.Log("lap out a");
+                        prevLap = -1;
+                        lapCount = -1;
+                        startNewLap();
+                        Debug.Log("lap out b");
+                    }
+                    Debug.Log("hello end");
+                }
+                // Debug.Log("Start is pressed");
+            }
+            if (postGameSurvey.doneSurvey && postGameSurvey.notErrorYet)
+            {
+                Debug.Log("hello survey before");
+                if (wwwPostGame == null)
+                {
+                    String postData = "{\"surveyData\": " + postGameSurvey.surveyData + ", \"parameters\": {" + string.Format("\"lapNumber\": {4}, \"fps\": {0}, \"resolutionMultiple\": {1}, \"q_len\": {2}, \"fps_var\": {3}", fps, resolutionMultiple, q_len, fps_var, lapCount + 1) + "},";
+                    postData += "\"systemInfo\": {" + string.Format("\"deviceType\": \"{0}\", \"deviceModel\": \"{1}\", \"deviceUniqueIdentifier\": \"{2}\", \"operatingSystem\": \"{3}\", \"processorType\": \"{4}\"", ("" + SystemInfo.deviceType).Replace("\"", "\\\""), ("" + SystemInfo.deviceModel).Replace("\"", "\\\""), ("" + SystemInfo.deviceUniqueIdentifier).Replace("\"", "\\\""), ("" + SystemInfo.operatingSystem).Replace("\"", "\\\""), ("" + SystemInfo.processorType).Replace("\"", "\\\"")) + "}, \"uuid\": \"" + sessionUuid + "\"}";
+                    initLog();
+                    writer.WriteLine(postData);
+                    writer.Flush();
+                    Debug.Log("surveyData = " + postGameSurvey.surveyData);
+                    if (postGameSurvey.surveyData.Length > 0)
+                    {
+                        UnityWebRequest www = UnityWebRequest.Put("https://isaacsteadman.com/arcade-survey/survey", postData);
+                        www.SetRequestHeader("Accept", "application/json");
+                        www.SetRequestHeader("Content-Type", "application/json");
+                        www.Send();
+                        wwwPostGame = www;
+                    }
+                }
+                else if (wwwPostGame.isDone)
+                {
+                    if (wwwPostGame.isNetworkError || wwwPostGame.isHttpError)
+                    {
+                        postGameSurvey.show();
+                        postGameSurvey.setError(wwwPostGame.error);
+                    }
+                    else
+                    {
+                        Debug.Log("lap out 2 a");
+                        startNewLap();
+                        Debug.Log("lap out 2 b");
+                        postGameSurvey.hide();
+                        //position = new Vector3(361, 4, -95);
+                        //transform.rotation = Quaternion.Euler(new Vector3(0.0f, 90.0f, 0.0f));
+                    }
+                    wwwPostGame = null;
+                }
+            }
         }
         //======================================================================================
 
@@ -670,8 +1175,14 @@ public class ArcadeCar : MonoBehaviour
 
             newSteerAngle = Mathf.Min(Math.Abs(newSteerAngle), steerLimit) * sgn;
 
-            axles[0].steerAngle = newSteerAngle;
-            //axles[0].steerAngle = h;
+            if (SystemInfo.deviceType == DeviceType.Desktop)
+            {
+                axles[0].steerAngle = newSteerAngle;
+            }
+            else if (SystemInfo.deviceType == DeviceType.Handheld)
+            {
+                axles[0].steerAngle = h;
+            }
         }
         else
         {
@@ -692,11 +1203,37 @@ public class ArcadeCar : MonoBehaviour
 
             axles[0].steerAngle = ang;
         }
+        prevStartPressed = startPressed;
+    }
+
+    void startNewLap(bool doIncrement=true)
+    {
+        Debug.Log("lap in a");
+        postGameSurvey.doneSurvey = false;
+        Debug.Log("line 1208 increment lapCount");
+        if (doIncrement) {
+            lapCount++;
+            if (lapCount >= randomizedLapArray.Length) {
+                Debug.Log("Yo, Finished surveys");
+                lapCount = 0;
+                prevLap = -1;
+                isDoneSurveys = true;
+            }
+        }
+        lap_increment = false;
+        enableFinishFlag = true;
+        FINISH_LINE_FLAG = false;
+        time = 0;
+        startGame = true;
+        startRace = false;
+        Reset(new Vector3(0f, 0f, 0f), true);
+        Debug.Log("lap in b");
     }
 
     void Update()
     {
         ApplyVisual();
+        WheelDataPrint();
     }
 
     void FixedUpdate()
@@ -820,20 +1357,22 @@ public class ArcadeCar : MonoBehaviour
     }
 
     //===============================code===============================================================
+
+    //System.Diagnostics.Stopwatch stopwatch = new System.Diagnostics.Stopwatch();
     public float getTime()
     {
         time += Time.deltaTime;
-        return time;
+        return time / 2;
     }
     public String formatTime(float time)
     {
         if (time == -1) return "N/A";
         else
         {
-            var minutes = time / 60; //Divide the guiTime by sixty to get the minutes.
-            var seconds = time % 60;//Use the euclidean division for the seconds.
-            var fraction = (time * 100) % 100;
-            String stringTime = string.Format("{0:00} : {1:00} : {2:000}", minutes, seconds, fraction);
+            var minutes = Mathf.Floor(time / 60); //Divide the guiTime by sixty to get the minutes.
+            var seconds = Mathf.Floor(time % 60);//Use the euclidean division for the seconds.
+            var fraction = Mathf.Floor((time * 100) % 100);
+            String stringTime = string.Format("{0:00} : {1:00} : {2:00}", minutes, seconds, fraction);
             return stringTime;
         }
     }
@@ -848,9 +1387,15 @@ public class ArcadeCar : MonoBehaviour
 
     //==============================================================================================
 
-
+    public String formattedTime = "";
     void OnGUI()
     {
+        if (FINISH_LINE_FLAG)
+        {
+            //GUI.Label(new Rect(200.0f, 200.0f, 500, 500), string.Format("FINISH"), style);
+            controlsDisabled = true;
+        }
+
         if (!controllable)
         {
             return;
@@ -859,19 +1404,38 @@ public class ArcadeCar : MonoBehaviour
         float speed = GetSpeed();
 
         //======================================code=======================================================
-        String formattedTime = "";
+        //String formattedTime = "";
         if (startGame & !startRace)
         {
+            resultText = "";
             countdownTime = doCountdown();
             controlsDisabled = true;
             formattedTime = "";
+            changeLapVariables();
+            //changeResolution();
+            //changeFPS();
+            //changeLatency();
+            //changeStability();
         }
         if (countdownTime == "-1")
         {
+            rageQuitFlag = true;
             controlsDisabled = false;
             time = 0;
+            //Debug.Log(randomizedLapArray[lapCount]);
+            //Debug.Log(Application.targetFrameRate);
             startRace = true;
             countdownTime = "";
+            dataFlag = false;
+        }
+        else if (FINISH_LINE_FLAG == false & rageQuitFlag == true & startRace == true & start_pressed == true)
+        {
+            Debug.Log("line 1419 was increment lapCount");
+            // lapCount++;
+            startGame = false;
+            startRace = false;
+            rageQuitFlag = false;
+            TimeList.Add("N/A");
         }
         if (startRace) formattedTime = formatTime(getTime());
         //================================================================================================
@@ -879,21 +1443,39 @@ public class ArcadeCar : MonoBehaviour
         float speedKmH = speed * 3.6f;
 
         //=======================================code=======================================================
-        GUI.Label(new Rect(850.0f, 50.0f, 150, 130), "Lap Time: " + formattedTime, timerStyle);
-        GUI.Label(new Rect(850.0f, 500.0f, 200, 200), countdownTime, countdownStyle);
-        GUI.Box(new Rect(30.0f, 150.0f, 150, 130), "====== Scoreboard ======\nBest score: " + formatTime(bestScore()), timerStyle);
+        //GUI.Label(new Rect(850.0f, 50.0f, 150, 130), "Lap Time: " + formattedTime, timerStyle);
+        //GUI.Label(new Rect(850.0f, 500.0f, 200, 200), countdownTime, countdownStyle);
+
+        top5ScoresString = "";
+        List<float> top5Scores = bestScores();
+        int count = 1;
+        if (top5Scores.Count == 0) top5ScoresString = "N/A";
+        else foreach (var x in top5Scores)
+            {
+                top5ScoresString += String.Format("#{0}    ", count);
+                count++;
+                top5ScoresString += formatTime(x / 2);
+                top5ScoresString += "\n";
+            }
+
+        //GUI.Box(new Rect(30.0f, 150.0f, 150, 130), "====== Scoreboard ======\nBest score: " + formatTime(bestScore0()), timerStyle);
+        //GUI.Box(new Rect(30.0f, 150.0f, 150, 130), "====== Scoreboard ======\n" + top5ScoresString, timerStyle);"====== Scoreboard ======\n" + top5ScoresString, timerStyle);
+        float screenHeight = Screen.height;
+        // Debug.Log(screenHeight);
+        float screenWidth = Screen.width;
+        // Debug.Log(screenWidth);
+        //GUI.Box(new Rect(screenWidth * (0.75f), screenHeight * (0.333f), screenWidth / (6.0f), screenHeight / 3), "====== Scoreboard ======\n" + top5ScoresString, timerStyle);
+        //GUI.Box(new Rect(screenWidth * (0.666f), screenHeight * (0.666f), screenWidth / (6.0f), screenHeight / 3), resultText, timerStyle);
         //====================================================================================================
 
-        GUI.Label(new Rect(30.0f, 20.0f, 150, 130), string.Format("{0:F2} km/h", speedKmH), style);
-
+        /*GUI.Label(new Rect(30.0f, 20.0f, 150, 130), string.Format("{0:F2} km/h", speedKmH), style);
         GUI.Label(new Rect(30.0f, 40.0f, 150, 130), string.Format("{0:F2} {1:F2} {2:F2}", afterFlightSlipperyTiresTime, brakeSlipperyTiresTime, handBrakeSlipperyTiresTime), style);
-
         float yPos = 60.0f;
         for (int axleIndex = 0; axleIndex < axles.Length; axleIndex++)
         {
             GUI.Label(new Rect(30.0f, yPos, 150, 130), string.Format("Axle {0}, steering angle {1:F2}", axleIndex, axles[axleIndex].steerAngle), style);
             yPos += 18.0f;
-        }
+        }*/
 
         Camera cam = Camera.current;
         if (cam == null)
@@ -917,7 +1499,7 @@ public class ArcadeCar : MonoBehaviour
                     Vector3 wsFrom = (wheelIndex == WHEEL_LEFT_INDEX) ? wsL : wsR;
 
                     Vector3 screenPos = cam.WorldToScreenPoint(wsFrom);
-                    GUI.Label(new Rect(screenPos.x, Screen.height - screenPos.y, 150, 130), wheelData.debugText, style);
+                    //GUI.Label(new Rect(screenPos.x, Screen.height - screenPos.y, 150, 130), wheelData.debugText, style);
                 }
             }
         }
@@ -979,8 +1561,8 @@ public class ArcadeCar : MonoBehaviour
             // Draw wheel
             UnityEditor.Handles.DrawWireDisc(wsTo, wsAxle, axle.radius);
 
-			UnityEditor.Handles.DrawWireDisc(wsTo + wsAxle * wheelWidth, wsAxle, axle.radius);
-			UnityEditor.Handles.DrawWireDisc(wsTo - wsAxle * wheelWidth, wsAxle, axle.radius);
+            UnityEditor.Handles.DrawWireDisc(wsTo + wsAxle * wheelWidth, wsAxle, axle.radius);
+            UnityEditor.Handles.DrawWireDisc(wsTo - wsAxle * wheelWidth, wsAxle, axle.radius);
 
 
         }
@@ -1188,7 +1770,7 @@ public class ArcadeCar : MonoBehaviour
         /*
         if (slipperyK < 0.99f)
         {
-            Debug.Log(string.Format("Slippery {0:F2}", slipperyK));
+            // Debug.Log(string.Format("Slippery {0:F2}", slipperyK));
         }
         */
 
@@ -1320,7 +1902,7 @@ public class ArcadeCar : MonoBehaviour
 
         if (axles.Length != 2)
         {
-            Debug.LogWarning("Ackermann work only for 2 axle vehicles.");
+            // Debug.LogWarning("Ackermann work only for 2 axle vehicles.");
             return;
         }
 
@@ -1329,7 +1911,7 @@ public class ArcadeCar : MonoBehaviour
 
         if (Mathf.Abs(rearAxle.steerAngle) > 0.0001f)
         {
-            Debug.LogWarning("Ackermann work only for vehicles with forward steering axle.");
+            // Debug.LogWarning("Ackermann work only for vehicles with forward steering axle.");
             return;
         }
 
@@ -1454,13 +2036,10 @@ public class ArcadeCar : MonoBehaviour
                 }
             }
 
+
             //visualRotationRad
 
         }
 
     }
-
-
-
 }
-
