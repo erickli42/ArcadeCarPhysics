@@ -1060,7 +1060,7 @@ public class ArcadeCar : MonoBehaviour
             }
             if (postGameSurvey.doneSurvey && postGameSurvey.notErrorYet)
             {
-                Debug.Log("hello survey before");
+                Debug.Log("THE SURVEY IS DONE");
                 if (wwwPostGame == null)
                 {
                     String postData = "{\"surveyData\": " + postGameSurvey.surveyData + ", \"parameters\": {" + string.Format("\"lapNumber\": {4}, \"fps\": {0}, \"resolutionMultiple\": {1}, \"q_len\": {2}, \"fps_var\": {3}", fps, resolutionMultiple, q_len, fps_var, lapCount + 1) + "},";
@@ -1068,32 +1068,30 @@ public class ArcadeCar : MonoBehaviour
                     initLog();
                     writer.WriteLine(postData);
                     writer.Flush();
-                    Debug.Log("surveyData = " + postGameSurvey.surveyData);
+                    Debug.Log("ABOUT TO SEND SURVEY RESULTS TO SERVER");
                     if (postGameSurvey.surveyData.Length > 0)
                     {
-                        UnityWebRequest www = UnityWebRequest.Put("https://isaacsteadman.com/arcade-survey/survey", postData);
+                        UnityWebRequest www = UnityWebRequest.Put("https://seniordesign-295702.uc.r.appspot.com/raceGameResults", postData);
                         www.SetRequestHeader("Accept", "application/json");
                         www.SetRequestHeader("Content-Type", "application/json");
                         www.Send();
                         wwwPostGame = www;
+                        Debug.Log("BOOLEAN" + wwwPostGame.isDone);
                     }
                 }
                 else if (wwwPostGame.isDone)
                 {
-                    //if (wwwPostGame.isNetworkError || wwwPostGame.isHttpError)
-                    //{
-                    //    postGameSurvey.show();
-                    //    postGameSurvey.setError(wwwPostGame.error);
-                    //}
-                    //else
-                    //{
-                        Debug.Log("lap out 2 a");
-                        startNewLap();
-                        Debug.Log("lap out 2 b");
+                    Debug.Log("WEB REQUEST DONE, NEXT LAP");
+                    if (wwwPostGame.isNetworkError || wwwPostGame.isHttpError)
+                    {
+                        postGameSurvey.show();
+                        postGameSurvey.setError(wwwPostGame.error);
+                    }
+                    else
+                    {
                         postGameSurvey.hide();
-                        //position = new Vector3(361, 4, -95);
-                        //transform.rotation = Quaternion.Euler(new Vector3(0.0f, 90.0f, 0.0f));
-                    //}
+                        startNewLap();
+                    }
                     wwwPostGame = null;
                 }
             }
