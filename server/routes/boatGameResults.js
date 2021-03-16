@@ -33,7 +33,8 @@ router.put('/', async function(req, res, next) {
          "Device Model": systemInfo.deviceModel,
          "Device UID": systemInfo.deviceUniqueIdentifier,
          "Operating System": systemInfo.operatingSystem,
-         "Processor": systemInfo.processorType
+         "Processor": systemInfo.processorType,
+         "Survey Code": parameters.surveyCode
         });
 
     res.sendStatus(200);
