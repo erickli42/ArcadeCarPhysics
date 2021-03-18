@@ -17,7 +17,8 @@ router.put('/', async function(req, res, next) {
     const doc = new GoogleSpreadsheet('182pH2ziYRDjZgKGFqklPuNw87SB9Yna18S4ypn1UjYU');
     await doc.useServiceAccountAuth(creds);
     await doc.loadInfo();
- 
+
+    timestamp = new Date().toUTCString();
     const sheet = doc.sheetsByIndex[0];
     const larryRow = await sheet.addRow({
          "Question 1": surveyData.Question_0[0],
@@ -34,7 +35,8 @@ router.put('/', async function(req, res, next) {
          "Device UID": systemInfo.deviceUniqueIdentifier,
          "Operating System": systemInfo.operatingSystem,
          "Processor": systemInfo.processorType,
-         "Survey Code": parameters.surveyCode
+         "Survey Code": parameters.surveyCode,
+         "Timestamp (UTC)": timestamp
         });
 
     res.sendStatus(200);
